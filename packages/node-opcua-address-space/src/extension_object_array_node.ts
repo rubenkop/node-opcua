@@ -202,7 +202,6 @@ function buildConstructorFromDefinition(
             field.$$initialize$$ = initialize_array.bind(null, field.$$initialize$$);
             field.$$func_encode$$ = encode_array.bind(null, field.$$func_encode$$);
             field.$$func_decode$$ = decode_array.bind(null, field.$$func_decode$$);
-
         }
     }
 

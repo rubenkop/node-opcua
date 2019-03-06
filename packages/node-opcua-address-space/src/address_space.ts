@@ -963,7 +963,7 @@ export class AddressSpace implements AddressSpacePrivate {
             dataType = tmp as UADataType;
         }
         if (!(dataType instanceof UADataType)) {
-            throw new Error("constructExtensionObject: dataType has unexpectedtype" + dataType);
+            throw new Error("constructExtensionObject: dataType has unexpected type" + dataType);
         }
         prepareDataType(dataType);
         const Constructor = (dataType as any)._extensionObjectConstructor;

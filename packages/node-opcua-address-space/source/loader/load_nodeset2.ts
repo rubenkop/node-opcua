@@ -91,15 +91,14 @@ export function generateAddressSpace(
 
     /**
      *
-     * @param alias_name {string}
-     * @param nodeId
+     * @param aliasName {string}
      */
-    function addAlias(alias_name: string, nodeIdinXmlContext: string) {
+    function addAlias(aliasName: string, nodeIdinXmlContext: string) {
         assert(typeof nodeIdinXmlContext === "string");
         const nodeId = _translateNodeId(nodeIdinXmlContext);
         assert(nodeId instanceof NodeId);
-        alias_map[alias_name] = nodeId;
-        addressSpace1.getNamespace(nodeId.namespace).addAlias(alias_name, nodeId);
+        alias_map[aliasName] = nodeId;
+        addressSpace1.getNamespace(nodeId.namespace).addAlias(aliasName, nodeId);
     }
 
     let namespace_uri_translation: { [key: number]: number } = {};
@@ -185,11 +184,9 @@ export function generateAddressSpace(
     const reg = /ns=([0-9]+);(.*)/;
 
     function _translateNodeId(nodeId: string): NodeId {
-        assert(typeof nodeId === "string");
         if (alias_map[nodeId]) {
             return alias_map[nodeId];
         }
-
         const m = nodeId.match(reg);
         if (m) {
             const namespaceIndex = _translateNamespaceIndex(parseInt(m[1], 10));
