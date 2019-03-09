@@ -70,28 +70,31 @@ function convertAccessLevel(accessLevel?: string | null): AccessLevelFlag {
     return makeAccessLevelFlag(accessLevelN);
 }
 
+type Task = (addressSpace: AddressSpace) => void;
+
 export function generateAddressSpace(
-  addressSpace: AddressSpacePublic ,
+  addressSpace: AddressSpacePublic,
   xmlFiles: string | string[],
   callback: (err?: Error) => void
 ): void;
 export function generateAddressSpace(
-  addressSpace: AddressSpacePublic ,
-  xmlFiles: string | string[],
+  addressSpace: AddressSpacePublic,
+  xmlFiles: string | string[]
 ): Promise<void>;
 export function generateAddressSpace(
-  addressSpace: AddressSpacePublic ,
+  addressSpace: AddressSpacePublic,
   xmlFiles: string | string[],
   callback?: (err?: Error) => void
 ): any {
 
     const addressSpace1 = addressSpace as AddressSpace;
 
+    let postTasks: Task = [];
+
     let alias_map: { [key: string]: NodeId } = {};
 
     /**
-     *
-     * @param aliasName {string}
+     * @param aliasName
      */
     function addAlias(aliasName: string, nodeIdinXmlContext: string) {
         assert(typeof nodeIdinXmlContext === "string");
@@ -607,7 +610,7 @@ export function generateAddressSpace(
                             default:
                                 // tslint:disable:no-console
                                 // tslint:disable:max-line-length
-                                console.warn("loadnodeset2 ( checking identifier type) : unsupported typeDefinitionId in ExtensionObject " + typeDefinitionId);
+                                debugLog("loadnodeset2 ( checking identifier type) : unsupported typeDefinitionId in ExtensionObject " + typeDefinitionId);
                                 break;
                         }
                     }
@@ -645,13 +648,44 @@ export function generateAddressSpace(
                         break;
                     default:
                         // to do: implement a post action to create and bind extension object
+                    {
                         console.log("loadnodeset2: unsupported typeDefinitionId in ExtensionObject " + self.typeDefinitionId.toString());
+                        const typeDefinitionId = self.typeDefinitionId;
+                        const task = (addressSpace2: AddressSpace) => {
+                            console.log("Post treatment ", typeDefinitionId);
+                            const dataType = addressSpace2.findDataType(typeDefinitionId);
+                            if (!dataType) {
+                                return;
+                            }
+                            const op = addressSpace2.constructExtensionObject(dataType);
+                        };
+                        postTasks.push(task);
+                    }
                         break;
                 }
             }
         }
     };
+    const json_extractor: ReaderStateParser = {
+        
+        init(this: any, element: string) {
+            this.pojo = {};
+        },
+        finish(this: any) {
+            /* empty */
+        },
 
+        startElement(this: any, element: string) {
+            /* empty */
+            this.element = {};
+        },
+
+        endElement(this: any, element: string) {
+            /* empty */
+            this.parent!.pojo[element] = this.element;
+            this.pojo[element] = null;
+        }
+    };
     const extensionObject_parser = {
         ExtensionObject: {
             init(this: any) {
@@ -701,7 +735,7 @@ export function generateAddressSpace(
                     value: this.listData
                 };
             },
-            endElement(this: any, element: any) {
+            endElement(this: Read, element: string) {
                 this.listData.push(this.parser[dataType].value);
             }
         };
@@ -775,6 +809,13 @@ export function generateAddressSpace(
                     if (this.parser.ExtensionObject.extensionObject) {
                         // assert(element === "ExtensionObject");
                         this.listData.push(this.parser.ExtensionObject.extensionObject);
+                    } else if (this.parser.ExtensionObject.extensionObjectFuture) {
+                        // assert(element === "ExtensionObject");
+                        const opaqueData=this.parser.ExtensionObject.extensionObjectFuture
+                        const task = (addressSpace) {
+
+                        }
+                        this.listData.push(this.parser.ExtensionObject.extensionObject);
                     }
                 }
 
@@ -817,6 +858,7 @@ export function generateAddressSpace(
                 init(this: any) {
                     this.typeDefinitionId = {};
                     this.extensionObject = null;
+                    this.extensioNObjectFuture = null;
                 },
                 parser: _extensionObject_inner_parser,
                 finish(this: any) {
@@ -1029,6 +1071,14 @@ export function generateAddressSpace(
         parser.parse(xmlFile, callback1);
     }, (err?: Error | null) => {
         make_back_references(addressSpace1);
+
+        // perform post task
+        debugLog("Performing post loading tasks");
+        for (const task of postTasks) {
+            task(addressSpace1);
+        }
+        postTasks = [];
+
         assert(!addressSpace1.suspendBackReference);
         callback!(err || undefined);
     });
@@ -1037,4 +1087,4 @@ export function generateAddressSpace(
 // tslint:disable:no-var-requires
 // tslint:disable:max-line-length
 const thenify = require("thenify");
-(module.exports as any).generateAddressSpace = thenify.withCallback((module.exports as any).generateAddressSpace );
+(module.exports as any).generateAddressSpace = thenify.withCallback((module.exports as any).generateAddressSpace);

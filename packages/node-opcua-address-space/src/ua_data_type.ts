@@ -86,7 +86,7 @@ export class UADataType extends BaseNode implements UADataTypePublic {
 
     public getEncodingNode(encoding_name: string): BaseNode | null {
 
-        assert(encoding_name === "Default Binary" || encoding_name === "Default XML");
+        assert(encoding_name === "Default Binary" || encoding_name === "Default Xml");
         // could be binary or xml
         const refs = this.findReferences("HasEncoding", true);
         const addressSpace = this.addressSpace;
