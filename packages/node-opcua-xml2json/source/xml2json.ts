@@ -376,7 +376,6 @@ export class Xml2Json {
      * @internal
      */
     public _promote(new_state: IReaderState, name?: string, attr?: XmlAttributes) {
-        console.log(" Promote : name", name!);
         attr = attr || {};
         this.state_stack.push({
             backup: {},
@@ -395,7 +394,6 @@ export class Xml2Json {
      * @internal
      */
     public _demote(cur_state: IReaderState) {
-        console.log(" demote : name",(cur_state as any).name);
 
       ///  assert(this.current_state === cur_state);
         const { state, backup } = this.state_stack.pop();

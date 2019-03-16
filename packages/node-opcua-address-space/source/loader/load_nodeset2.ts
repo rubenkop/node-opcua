@@ -627,9 +627,9 @@ export function generateAddressSpace(
                 Range: Range_parser.Range
             },
 
-            startElement(this: any, elementName: string, attrs: any) {
-                this.engine._promote(json_extractor, elementName, attrs);
-            },
+//xx             startElement(this: any, elementName: string, attrs: any) {
+//xx              //   this.engine._promote(json_extractor, elementName, attrs);
+//xx             },
 
             finish(this: any) {
                 const self = this.parent;
