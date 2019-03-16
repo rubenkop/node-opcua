@@ -20,6 +20,7 @@ import { Argument } from "node-opcua-service-call";
 import { DataType } from "node-opcua-variant";
 import { VariantArrayType } from "node-opcua-variant";
 import {
+    json_extractor,
     Parser,
     ParserLike,
     ReaderState,
@@ -89,7 +90,7 @@ export function generateAddressSpace(
 
     const addressSpace1 = addressSpace as AddressSpace;
 
-    let postTasks: Task = [];
+    let postTasks: Task[] = [];
 
     let alias_map: { [key: string]: NodeId } = {};
 
@@ -625,6 +626,11 @@ export function generateAddressSpace(
                 EnumValueType: enumValueType_parser.EnumValueType,
                 Range: Range_parser.Range
             },
+
+            startElement(this: any, elementName: string, attrs: any) {
+                this.engine._promote(json_extractor, elementName, attrs);
+            },
+
             finish(this: any) {
                 const self = this.parent;
                 switch (self.typeDefinitionId.toString()) {
@@ -657,33 +663,14 @@ export function generateAddressSpace(
                             if (!dataType) {
                                 return;
                             }
-                            const op = addressSpace2.constructExtensionObject(dataType);
+                            const pojo = {};
+                            const op = addressSpace2.constructExtensionObject(dataType, pojo);
                         };
                         postTasks.push(task);
                     }
                         break;
                 }
             }
-        }
-    };
-    const json_extractor: ReaderStateParser = {
-        
-        init(this: any, element: string) {
-            this.pojo = {};
-        },
-        finish(this: any) {
-            /* empty */
-        },
-
-        startElement(this: any, element: string) {
-            /* empty */
-            this.element = {};
-        },
-
-        endElement(this: any, element: string) {
-            /* empty */
-            this.parent!.pojo[element] = this.element;
-            this.pojo[element] = null;
         }
     };
     const extensionObject_parser = {
@@ -735,7 +722,7 @@ export function generateAddressSpace(
                     value: this.listData
                 };
             },
-            endElement(this: Read, element: string) {
+            endElement(this: any, element: string) {
                 this.listData.push(this.parser[dataType].value);
             }
         };
@@ -811,8 +798,9 @@ export function generateAddressSpace(
                         this.listData.push(this.parser.ExtensionObject.extensionObject);
                     } else if (this.parser.ExtensionObject.extensionObjectFuture) {
                         // assert(element === "ExtensionObject");
-                        const opaqueData=this.parser.ExtensionObject.extensionObjectFuture
-                        const task = (addressSpace) {
+                        const opaqueData = this.parser.ExtensionObject.extensionObjectFuture;
+                        const task = (addressSpace);
+                        {
 
                         }
                         this.listData.push(this.parser.ExtensionObject.extensionObject);

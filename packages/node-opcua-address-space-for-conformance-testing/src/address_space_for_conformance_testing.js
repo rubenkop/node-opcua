@@ -560,7 +560,7 @@ function add_access_right_variables(namespace, parentFolder) {
         })
     });
 
-    name = "s=AccessLevel_CurrentWrite";
+    name = "AccessLevel_CurrentWrite";
     namespace.addVariable({
         componentOf: accessLevel_All_Folder,
         browseName: name,

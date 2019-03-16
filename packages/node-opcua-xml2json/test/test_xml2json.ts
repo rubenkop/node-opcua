@@ -1,5 +1,6 @@
 import { should } from "should";
-import { Xml2Json, XmlAttributes } from "../source/xml2json";
+import { json_extractor, Xml2Json, XmlAttributes } from "..";
+
 const _should = should;
 
 type ErrorCallback = (err?: Error) => void;
@@ -77,7 +78,7 @@ describe("XMLToJSON", () => {
 
     it("should parse a escaped string", (done: ErrorCallback) => {
 
-        let displayName: string|null = null;
+        let displayName: string | null = null;
 
         const parser = new Xml2Json({
 
@@ -93,11 +94,110 @@ describe("XMLToJSON", () => {
         parser.parseString(
           "<object>" +
           "  <DisplayName>&lt;HelloWorld&gt;</DisplayName>" +
-          "</object>",  () => {
+          "</object>", () => {
 
               displayName!.should.eql("<HelloWorld>");
 
               done();
           });
+    });
+});
+
+describe("It should parse XML doc into json", () => {
+
+    it("should parse a simple xml file to json", async () => {
+
+        const parser = new Xml2Json();
+
+        const json = await parser.parseString(
+          "<Machine>" +
+          "<DisplayName>&lt;HelloWorld&gt;</DisplayName>" +
+          "</Machine>");
+
+        json.should.eql(
+          {
+              machine: {
+                  displayName: "<HelloWorld>"
+              }
+          });
+
+    });
+
+    it("should parse a xml file containing an array to json", async () => {
+
+        const parser = new Xml2Json();
+
+        const json = await parser.parseString(
+          `
+<Plant>
+<ListOfMachines>
+<Machine><DisplayName>Machine1</DisplayName></Machine>
+<Machine><DisplayName>Machine2</DisplayName></Machine>
+<Machine><DisplayName>Machine3</DisplayName></Machine>
+<Machine><DisplayName>Machine4</DisplayName></Machine>
+</ListOfMachines>
+</Plant>
+`);
+
+        json.should.eql(
+          {
+              plant: {
+                  machines: [
+                      { displayName: "Machine1" },
+                      { displayName: "Machine2" },
+                      { displayName: "Machine3" },
+                      { displayName: "Machine4" }
+                  ]
+              }
+          });
+
+    });
+
+    it("should mix both type of parser", async () => {
+
+        const parser = new Xml2Json({
+
+            parser: {
+
+                person: {
+                    init(name: string, attrs: XmlAttributes) {
+                        this.parent.root.obj = {};
+                        this.obj = this.parent.root.obj;
+                        this.obj.name = attrs.name;
+                    },
+
+                    finish() {
+                        this.obj.should.eql({ name: "John", address: "Paris" });
+                    },
+                    startElement(elementName: string, attrs: XmlAttributes) {
+                        console.log("startElement : elementName ", elementName);
+                        this.engine._promote(json_extractor, elementName, attrs);
+                    },
+
+                    parser: {
+                        address: {
+                            finish() {
+                                this.parent.obj.address = this.text;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        await parser.parseString(
+          `<employees>
+             <person name='John'>
+               <address>Paris</address>
+               <otherStuff>Hello</otherStuff>
+             </person>
+          </employees>`);
+
+        (parser as any).obj.should.eql({
+            name: "John",
+
+            address: "Paris"
+        });
+
     });
 });

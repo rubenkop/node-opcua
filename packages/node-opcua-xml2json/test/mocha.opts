@@ -3,3 +3,4 @@
 --recursive
 --bail
 --timeout 500000
+test/**.ts
