@@ -36,6 +36,7 @@ import {
     SessionContext,
     UAObject,
 } from "..";
+import { ExtensionObject } from "node-opcua-extension-object";
 
 // make sure all namespace 0 data type are properly loaded
 const context = SessionContext.defaultContext;
@@ -113,9 +114,10 @@ describe("testing address space namespace loading", function(this: any) {
         // ------------------------------------------------------------------------------
         // create an extension object
         // ------------------------------------------------------------------------------
-        const op = addressSpace.constructExtensionObject(myStructureDataType);
+        const op = addressSpace.constructExtensionObject(myStructureDataType) as any;
 
         op.constructor.name.should.eql("MyStructure");
+        op.should.be.instanceof(ExtensionObject);
 
         op.should.have.property("lowValue");
         op.lowValue.should.eql(0);
@@ -204,7 +206,7 @@ describe("testing address space namespace loading", function(this: any) {
                 }
             ]
         };
-        const op = addressSpace.constructExtensionObject(myOtherStructureDataType, options);
+        const op = addressSpace.constructExtensionObject(myOtherStructureDataType, options) as any;
 
         op.constructor.name.should.eql("MyOtherStructure");
         // xx console.log(op.toString());

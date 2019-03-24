@@ -87,8 +87,6 @@ import { StatusCode } from "node-opcua-status-code";
 import { BrowseNextRequest, BrowseNextResponse } from "node-opcua-types";
 import { getFunctionParameterNames, isNullOrUndefined, lowerFirstLetter } from "node-opcua-utils";
 import { DataType, Variant, VariantLike } from "node-opcua-variant";
-
-import { BrowseNextRequest, BrowseNextResponse } from "node-opcua-types";
 import {
     ArgumentDefinition,
     BrowseDescriptionLike,

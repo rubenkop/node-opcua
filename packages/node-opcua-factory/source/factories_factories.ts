@@ -79,7 +79,8 @@ export function hasConstructor(expandedNodeId: ExpandedNodeId): boolean {
     }
     /* istanbul ignore next */
     if (!verifyExpandedNodeId(expandedNodeId)) {
-        throw new Error("Invalid expandedNodeId");
+        console.log("Invalid expandedNodeId");
+        return false;
     }
     const expandedNodeIdKey = makeExpandedNodeIdKey(expandedNodeId);
     return !!constructorMap[expandedNodeIdKey];
@@ -88,7 +89,7 @@ export function hasConstructor(expandedNodeId: ExpandedNodeId): boolean {
 export function constructObject(expandedNodeId: ExpandedNodeId): BaseUAObject  {
 
     if (!verifyExpandedNodeId(expandedNodeId)) {
-        throw new Error(" constructObject : invalid expandedNodeId provided "+ expandedNodeId.toString());
+        throw new Error(" constructObject : invalid expandedNodeId provided " + expandedNodeId.toString());
     }
     const constructor = getConstructor(expandedNodeId);
 

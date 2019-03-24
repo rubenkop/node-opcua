@@ -1252,7 +1252,7 @@ function add_sampleView(namespace) {
     });
 }
 
-build_address_space_for_conformance_testing = function (addressSpace, options) {
+build_address_space_for_conformance_testing = function build_address_space_for_conformance_testing(addressSpace, options) {
 
     const namespace = addressSpace.registerNamespace("urn://node-opcua-simulator");
 

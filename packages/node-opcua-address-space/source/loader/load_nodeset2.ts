@@ -4,6 +4,7 @@
 import * as async from "async";
 import * as fs from "fs";
 import * as _ from "underscore";
+import { callbackify } from "util";
 
 import { assert } from "node-opcua-assert";
 import * as ec from "node-opcua-basic-types";
@@ -13,11 +14,11 @@ import { AccessLevelFlag, NodeClass, QualifiedName } from "node-opcua-data-model
 import { makeAccessLevelFlag } from "node-opcua-data-model";
 import { stringToQualifiedName } from "node-opcua-data-model";
 import { coerceLocalizedText } from "node-opcua-data-model";
-import { make_debugLog } from "node-opcua-debug";
+import { checkDebugFlag, make_debugLog } from "node-opcua-debug";
 import { NodeId } from "node-opcua-nodeid";
 import { resolveNodeId } from "node-opcua-nodeid";
 import { Argument } from "node-opcua-service-call";
-import { DataType } from "node-opcua-variant";
+import { DataType, Variant } from "node-opcua-variant";
 import { VariantArrayType } from "node-opcua-variant";
 import {
     json_extractor,
@@ -33,14 +34,60 @@ import {
 import {
     AddReferenceTypeOptions,
     AddressSpace as AddressSpacePublic,
-    CreateNodeOptions
+    CreateNodeOptions, Namespace, PseudoSession
 } from "../../source";
+
+import {
+    extractNamespaceDataType,
+    ExtraDataTypeManager
+} from "node-opcua-client-dynamic-extension-object";
+import { ExtensionObject } from "node-opcua-extension-object";
+import { Range } from "node-opcua-types";
 
 import { AddressSpace } from "../../src/address_space";
 import { BaseNode } from "../../src/base_node";
 import { NamespacePrivate } from "../../src/namespace_private";
+import { UADataType } from "../../src/ua_data_type";
 
+const doDebug = checkDebugFlag(__filename);
 const debugLog = make_debugLog(__filename);
+
+async function ensureDatatypeExtracted(addressSpace: any): Promise<ExtraDataTypeManager> {
+    const addressSpacePriv: any = addressSpace as any;
+    if (!addressSpacePriv.$$extraDataTypeManager) {
+        const session = new PseudoSession(addressSpace);
+        const extraDataTypeManager = new ExtraDataTypeManager();
+
+        extraDataTypeManager.setNamespaceArray(
+          addressSpace.getNamespaceArray().map((n: Namespace) => n.namespaceUri)
+        );
+
+        await extractNamespaceDataType(session, extraDataTypeManager);
+        addressSpacePriv.$$extraDataTypeManager = extraDataTypeManager;
+    }
+    return addressSpacePriv.$$extraDataTypeManager;
+}
+
+function findDataTypeNode(addressSpace: AddressSpace, encodingNodeId: NodeId): UADataType {
+
+    const encodingNode = addressSpace.findNode(encodingNodeId)!;
+
+    // xx console.log("encodingNode", encodingNode.toString());
+
+    const refs = encodingNode.findReferences("HasEncoding", false);
+    const dataTypes = refs
+      .map((ref) => addressSpace.findNode(ref.nodeId))
+      .filter((obj: any) => obj !== null);
+    if (dataTypes.length !== 1) {
+        throw new Error("Internal Error");
+    }
+    const dataTypeNode = dataTypes[0] as UADataType;
+    if (dataTypeNode.nodeClass !== NodeClass.DataType) {
+        throw new Error("internal error: expecting a UADataType node here");
+    }
+    return dataTypeNode;
+
+}
 
 function __make_back_references(namespace: NamespacePrivate) {
 
@@ -71,7 +118,7 @@ function convertAccessLevel(accessLevel?: string | null): AccessLevelFlag {
     return makeAccessLevelFlag(accessLevelN);
 }
 
-type Task = (addressSpace: AddressSpace) => void;
+type Task = (addressSpace: AddressSpace) => Promise<void>;
 
 export function generateAddressSpace(
   addressSpace: AddressSpacePublic,
@@ -139,8 +186,6 @@ export function generateAddressSpace(
         if (!(params.nodeId instanceof NodeId)) {
             throw new Error("invalid param");
         } // already translated
-
-        // sconsole.log(params.browseName,params.nodeId.toString());
 
         const namespace = addressSpace1.getNamespace(params.nodeId.namespace);
         return namespace._createNode(params) as BaseNode;
@@ -432,16 +477,17 @@ export function generateAddressSpace(
     const enumValueType_parser = {
         EnumValueType: {
             init(this: any) {
-                this.enumValueType = {
-                    description: null,
-                    displayName: null,
-                    value: 0
-                };
+                this.enumValueType = new EnumValueType({
+                    description: undefined,
+                    displayName: undefined,
+                    value: [0, 0] // Int64
+                });
             },
             parser: {
                 Value: {
                     finish(this: any) {
-                        this.parent.enumValueType.value = parseInt(this.text, 10);
+                        // Low part
+                        this.parent.enumValueType.value[0] = parseInt(this.text, 10);
                     }
                 },
 
@@ -466,7 +512,7 @@ export function generateAddressSpace(
     const argument_parser = {
         Argument: {
             init(this: any) {
-                this.argument = {};
+                this.argument = new Argument({});
             },
             parser: {
                 Name: {
@@ -524,7 +570,7 @@ export function generateAddressSpace(
                 }
             },
             finish(this: any) {
-                this.argument = new Argument(this.argument);
+                // xx this.argument = new Argument(this.argument);
             }
         }
     };
@@ -532,7 +578,7 @@ export function generateAddressSpace(
     const Range_parser = {
         Range: {
             init(this: any) {
-                this.range = {};
+                this.range = new Range({});
             },
             parser: {
                 Low: {
@@ -553,7 +599,7 @@ export function generateAddressSpace(
     const EUInformation_parser = {
         EUInformation: {
             init(this: any) {
-                this.euInformation = {};
+                this.euInformation = new EUInformation({});
             },
             parser: {
                 NamespaceUri: {
@@ -592,7 +638,6 @@ export function generateAddressSpace(
                     finish(this: any) {
 
                         const typeDefinitionId = this.text.trim();
-                        // xx console.log("typeDefinitionId = ",typeDefinitionId);
                         this.parent.parent.typeDefinitionId = resolveNodeId(typeDefinitionId);
 
                         switch (typeDefinitionId) {
@@ -626,49 +671,82 @@ export function generateAddressSpace(
                 EnumValueType: enumValueType_parser.EnumValueType,
                 Range: Range_parser.Range
             },
-
-//xx             startElement(this: any, elementName: string, attrs: any) {
-//xx              //   this.engine._promote(json_extractor, elementName, attrs);
-//xx             },
-
-            finish(this: any) {
+            startElement(this: any, elementName: string, attrs: any) {
                 const self = this.parent;
+                self.extensionObject = null;
+                self.extensionObjectPojo = null;
+                if (!this.parser.hasOwnProperty(elementName)) {
+                    // treat it as a pojo
+                    this.startPojo(elementName, attrs, (name: string, pojo: any) => {
+
+                        self.extensionObjectPojo = pojo;
+
+                        // istanbul ignore next
+                        if (doDebug) {
+                            debugLog("Found a pojo !!!!", elementName, name, pojo);
+                        }
+                    });
+                }
+            },
+            finish(this: any) {
+
+                const self = this.parent;
+
                 switch (self.typeDefinitionId.toString()) {
                     case "ns=0;i=7616": // EnumValueType
                         self.extensionObject = self.parser.Body.parser.EnumValueType.enumValueType;
                         assert(_.isObject(self.extensionObject));
+                        assert(self.extensionObject instanceof ExtensionObject);
                         break;
                     case "ns=0;i=297": // Arguments
                         self.extensionObject = self.parser.Body.parser.Argument.argument;
                         assert(_.isObject(self.extensionObject));
+                        assert(self.extensionObject instanceof ExtensionObject);
                         break;
                     case "i=888":
                     case "ns=0;i=888": // EUInformation
                         self.extensionObject = self.parser.Body.parser.EUInformation.euInformation;
                         assert(_.isObject(self.extensionObject));
+                        assert(self.extensionObject instanceof ExtensionObject);
                         break;
                     case "i=885":      // Range
                     case "ns=0;i=885":
                         self.extensionObject = self.parser.Body.parser.Range.range;
                         assert(_.isObject(self.extensionObject));
+                        assert(self.extensionObject instanceof ExtensionObject);
                         break;
-                    default:
+                    default: {
                         // to do: implement a post action to create and bind extension object
-                    {
                         console.log("loadnodeset2: unsupported typeDefinitionId in ExtensionObject " + self.typeDefinitionId.toString());
-                        const typeDefinitionId = self.typeDefinitionId;
-                        const task = (addressSpace2: AddressSpace) => {
-                            console.log("Post treatment ", typeDefinitionId);
-                            const dataType = addressSpace2.findDataType(typeDefinitionId);
-                            if (!dataType) {
+                        const typeDefinitionId = self.typeDefinitionId; // the "Default Binary" nodeId
+                        const pojo = self.extensionObjectPojo;
+
+                        const task = async (addressSpace2: AddressSpace) => {
+                            console.log("Post treatment ", typeDefinitionId.toString());
+
+                            await ensureDatatypeExtracted(addressSpace);
+
+                            const dataTypeNode = findDataTypeNode(addressSpace2, typeDefinitionId);
+                            if (!dataTypeNode) {
+                                console.log(" cannot find ", typeDefinitionId.toString());
                                 return;
                             }
-                            const pojo = {};
-                            const op = addressSpace2.constructExtensionObject(dataType, pojo);
+
+                            // at this time the bsd file containing object definition
+                            // must have been found and object can be constructed
+                            console.log("before constructExtensionObject");
+                            const op = addressSpace2.constructExtensionObject(dataTypeNode, pojo);
+                            console.log("after constructExtensionObject");
+
+                            console.log("xxxx POJO", op.toString());
+
                         };
                         postTasks.push(task);
-                    }
+                        self.extensionObjectPojo = null;
+                        assert(!self.extensionObject || self.extensionObject instanceof ExtensionObject);
                         break;
+                    }
+
                 }
             }
         }
@@ -679,7 +757,10 @@ export function generateAddressSpace(
                 this.typeDefinitionId = {};
                 this.extensionObject = null;
             },
-            parser: _extensionObject_inner_parser
+            parser: _extensionObject_inner_parser,
+            finish(this: any) {
+                /* empty */
+            }
         }
     };
 
@@ -692,11 +773,11 @@ export function generateAddressSpace(
 
         const r: ReaderStateParserLike = {
 
-            init(name: string, attrs: XmlAttributes) {
+            init(this: any, name: string, attrs: XmlAttributes) {
                 this.value = 0;
             },
 
-            finish() {
+            finish(this: any) {
                 this.value = parseFunc.call(this, this.text);
             }
         };
@@ -716,6 +797,7 @@ export function generateAddressSpace(
             parser: BasicType_parser(dataType, parseFunc),
 
             finish(this: any) {
+
                 this.parent.parent.obj.value = {
                     arrayType: VariantArrayType.Array,
                     dataType: (DataType as any)[dataType],
@@ -785,6 +867,7 @@ export function generateAddressSpace(
                 },
                 parser: extensionObject_parser,
                 finish(this: any) {
+
                     this.parent.parent.obj.value = {
                         arrayType: VariantArrayType.Array,
                         dataType: DataType.ExtensionObject,
@@ -792,17 +875,22 @@ export function generateAddressSpace(
                     };
 
                 },
-                endElement(this: any /*,element*/) {
+                startElement(this: any, elementName: string) {
+                    /* empty */
+                },
+                endElement(this: any, elementName: string) {
+
+                    this.listData.push(this.parser.ExtensionObject.extensionObject);
+
                     if (this.parser.ExtensionObject.extensionObject) {
                         // assert(element === "ExtensionObject");
-                        this.listData.push(this.parser.ExtensionObject.extensionObject);
+                        if (!(this.parser.ExtensionObject.extensionObject instanceof ExtensionObject)) {
+
+                            throw new Error("expecting  an extension object");
+                        }
                     } else if (this.parser.ExtensionObject.extensionObjectFuture) {
                         // assert(element === "ExtensionObject");
                         const opaqueData = this.parser.ExtensionObject.extensionObjectFuture;
-                        const task = (addressSpace);
-                        {
-
-                        }
                         this.listData.push(this.parser.ExtensionObject.extensionObject);
                     }
                 }
@@ -850,6 +938,9 @@ export function generateAddressSpace(
                 },
                 parser: _extensionObject_inner_parser,
                 finish(this: any) {
+                    if (this.extensionObject && !(this.extensionObject instanceof ExtensionObject)) {
+                        throw new Error("expecting an extension object");
+                    }
                     this.parent.parent.obj.value = {
                         dataType: DataType.ExtensionObject,
                         value: this.extensionObject
@@ -1062,13 +1153,25 @@ export function generateAddressSpace(
 
         // perform post task
         debugLog("Performing post loading tasks");
-        for (const task of postTasks) {
-            task(addressSpace1);
-        }
-        postTasks = [];
 
-        assert(!addressSpace1.suspendBackReference);
-        callback!(err || undefined);
+        async function performPostLoadingTasks(tasks: Task[]): Promise<void> {
+            for (const task of tasks) {
+                try {
+                    await task(addressSpace1);
+                } catch (err) {
+                    console.log(" Err  => ", err.message);
+                    console.log(err);
+                }
+            }
+        }
+
+        callbackify(performPostLoadingTasks)(postTasks, () => {
+            postTasks = [];
+            debugLog("Post loading task done");
+            assert(!addressSpace1.suspendBackReference);
+            callback!(err || undefined);
+        });
+
     });
 }
 
