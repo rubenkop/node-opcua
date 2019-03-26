@@ -143,7 +143,6 @@ function buildConstructorFromDefinition(
   dataType: UADataType
 ) {
 
-
     if (doDebug) {
         debugLog("buildConstructorFromDefinition#", dataType.nodeId.toString());
     }
@@ -225,10 +224,10 @@ function buildConstructorFromDefinition(
         if (field.$$isEnum$$) {
             data.category = FieldCategory.enumeration;
         } else if (field.$$isStructure$$) {
-            data.category = "complex";
+            data.category = FieldCategory.complex;
             data.fieldTypeConstructor = field.$$Constructor$$;
         } else {
-            data.category = "basic";
+            data.category = FieldCategory.basic;
         }
         fields.push(data);
     }

@@ -1,8 +1,16 @@
 // tslint:disable:no-console
 import { checkDebugFlag, make_debugLog } from "node-opcua-debug";
 import { should } from "should";
-import { json_extractor, json_parser, Xml2Json, XmlAttributes } from "..";
-import { ParserLike, ReaderStateParser, ReaderStateParserLike } from "../source/xml2json";
+import {
+    json_extractor,
+    json_parser,
+    ParserLike,
+    ReaderState,
+    ReaderStateParser,
+    ReaderStateParserLike,
+    Xml2Json,
+    XmlAttributes
+} from "..";
 
 const doDebug = checkDebugFlag(__filename);
 const debugLog = make_debugLog(__filename);
@@ -112,7 +120,7 @@ describe("XMLToJSON", () => {
 
     it("should parse a array", (done: ErrorCallback) => {
 
-        function BasicType_parser(
+        function BasicType_parser1(
           dataType: string,
           parseFunc: (this: any, text: string) => any
         ): ParserLike {
@@ -134,7 +142,7 @@ describe("XMLToJSON", () => {
             return _parser;
         }
 
-        function ListOf(
+        function ListOf1(
           dataType: string,
           parseFunc: any
         ) {
@@ -143,7 +151,7 @@ describe("XMLToJSON", () => {
                     this.listData = [];
                 },
 
-                parser: BasicType_parser(dataType, parseFunc),
+                parser: BasicType_parser1(dataType, parseFunc),
 
                 finish(this: any) {
                     this.parent.array = {
@@ -160,7 +168,7 @@ describe("XMLToJSON", () => {
 
         const state_Variant = {
             parser: {
-                ListOfFloat: ListOf("Float", parseFloat)
+                ListOfFloat: ListOf1("Float", parseFloat)
             }
         };
 
@@ -246,7 +254,7 @@ describe("It should parse XML doc into json", () => {
             address: "Paris",
             foo: { bar: "FooBar" },
             name: "John",
-            otherStuff: "Hello",
+            otherStuff: "Hello"
         };
 
         const parser = new Xml2Json({
@@ -266,14 +274,14 @@ describe("It should parse XML doc into json", () => {
                     startElement(this: any, elementName: string, attrs: XmlAttributes) {
                         if (!this.parser[elementName]) {
 
-                            this.startPojo(elementName, attrs, (name, pojo: any) => {
+                            this.startPojo(elementName, attrs, (name: string, pojo: any) => {
                                 this.obj[name] = pojo;
 
                             });
                         }
                     },
                     endElement(this: any, elementName: string) {
-                       //  console.log("xxx elementName ", elementName);
+                        //  console.log("xxx elementName ", elementName);
                     },
                     parser: {
                         address: {
@@ -298,7 +306,7 @@ describe("It should parse XML doc into json", () => {
           </employees>`);
 
         (parser as any).obj.should.eql(expectedPojo);
-       // obj.should.eql(expectedPojo);
+        // obj.should.eql(expectedPojo);
 
     });
 
@@ -317,6 +325,7 @@ describe("It should parse XML doc into json", () => {
             },
 
             Body: {
+
                 parser: {
                     Structure1: json_parser,
                     Structure2: json_parser
@@ -417,5 +426,403 @@ describe("It should parse XML doc into json", () => {
         // xx console.log("endElementCount",   endElementCount);
         // xx console.log("result = ", result);
         console.log("result = ", parser.result);
+    });
+});
+
+// <Definition Name="SomeName">
+//   <Field Name="Running" Value="0" dataType: [ValueRank="1"]>
+//      [<Description>text</Description>]
+//   <Field>
+// </Definition>
+const definition_parser = {
+    init(this: any, name: string, attrs: XmlAttributes) {
+        this.parent.obj.definition = [];
+        this.parent.obj.definition_name = attrs.Name;
+        this.array = this.parent.obj.definition;
+    },
+    parser: {
+        Field: {
+            init(this: any) {
+                this.description = undefined;
+            },
+            parser: {
+                Description: {
+                    finish(this: any) {
+                        this.parent.description = this.text;
+                    }
+                }
+            },
+            finish(this: any) {
+                this.parent.array.push({
+                    dataType: this.attrs.DataType,
+                    description: this.description,
+                    name: this.attrs.Name,
+                    value: this.attrs.Value,
+                    valueRank: parseInt(this.attrs.ValueRank || "-1", 10)
+                });
+            }
+        }
+    }
+};
+
+function BasicType_parser(
+  dataType: string,
+  parseFunc: (this: any, text: string) => any
+): ParserLike {
+
+    const _parser: ParserLike = {};
+
+    const r: ReaderStateParserLike = {
+        init(this: any, elementName: string, attrs: XmlAttributes) {
+            this.value = undefined;
+        },
+        finish(this: any) {
+            this.value = parseFunc.call(this, this.text);
+        }
+    };
+    _parser[dataType] = r;
+    return _parser;
+}
+
+function ListOf(
+  dataType: string,
+  parseFunc: any
+) {
+    return {
+        init(this: any) {
+            this.listData = [];
+        },
+
+        parser: BasicType_parser(dataType, parseFunc),
+
+        finish(this: any) {
+            this.parent.value = this.listData;
+        },
+        endElement(this: any, elementName: string) {
+            this.listData.push(this.parser[dataType].value);
+        }
+    };
+}
+
+const localizedTextReader: ReaderStateParserLike = {
+    init(this: any) {
+        this.localizedText = {};
+    },
+    parser: {
+        Locale: {
+            finish(this: any) {
+                this.parent.localizedText.locale = this.text.trim();
+            }
+        },
+        Text: {
+            finish(this: any) {
+                this.parent.localizedText.text = this.text.trim();
+            }
+        }
+    },
+    finish(this: any) {
+        this.parent.value = this.text;
+    }
+};
+
+const partials: { [key: string]: ReaderStateParserLike } = {
+    LocalizedText: localizedTextReader,
+    String: {
+        finish(this: any) {
+            this.parent.value = this.text;
+        }
+    },
+
+    Boolean: {
+        finish(this: any) {
+            this.parent.value = (this.text.toLowerCase() === "true");
+        }
+    },
+
+    ByteString: {
+        init(this: any) {
+            this.value = null;
+        },
+        finish(this: any) {
+            const base64text = this.text;
+            const byteString = Buffer.from(base64text, "base64");
+            this.parent.value = byteString;
+        }
+    },
+
+    Float: {
+        finish(this: any) {
+            this.parent.value = parseFloat(this.text);
+        }
+    },
+
+    Double: {
+        finish(this: any) {
+            this.parent.value = parseFloat(this.text);
+        }
+    },
+
+    Int8: {
+        finish(this: any) {
+            this.parent.value = parseInt(this.text, 10);
+        }
+    },
+
+    Int16: {
+        finish(this: any) {
+            this.parent.value = parseInt(this.text, 10);
+        }
+    },
+    Int32: {
+        finish(this: any) {
+            this.parent.value = parseInt(this.text, 10);
+        }
+    },
+    Int64: {
+        finish(this: any) {
+            this.parent.value = parseInt(this.text, 10);
+        }
+    },
+
+    UInt8: {
+        finish(this: any) {
+            this.parent.value = parseInt(this.text, 10);
+        }
+    },
+    UInt16: {
+        finish(this: any) {
+            this.parent.value = parseInt(this.text, 10);
+        }
+    },
+    UInt32: {
+        finish(this: any) {
+            this.parent.value = parseInt(this.text, 10);
+        }
+    },
+    UInt64: {
+        finish(this: any) {
+            this.parent.value = parseInt(this.text, 10);
+        }
+    },
+
+    ListOfLocalizedText: {
+        init(this: any) {
+            this.listData = [];
+        },
+        parser: { LocalizedText: localizedTextReader },
+        finish(this: any) {
+            this.parent.value = this.listData;
+        },
+        endElement(this: any/*element*/) {
+            this.listData.push(this.parser.LocalizedText.localizedText);
+        }
+    },
+
+    ListOfDouble: ListOf("Double", parseFloat),
+
+    ListOfFloat: ListOf("Float", parseFloat),
+
+    ListOfInt32: ListOf("Int32", parseInt),
+
+    ListOfInt16: ListOf("Int16", parseInt),
+
+    ListOfInt8: ListOf("Int8", parseInt),
+
+    ListOfUint32: ListOf("Uint32", parseInt),
+
+    ListOfUint16: ListOf("Uint16", parseInt),
+
+    ListOfUint8: ListOf("Uint8", parseInt)
+};
+
+interface Field {
+    dataType: any;
+    description?: string;
+    name: string;
+    value?: any;
+    valueRank?: number; // default is -1 => scalar
+}
+
+interface Definition {
+    name: string;
+    fields: Field[];
+}
+
+interface DefinitionMap {
+    findDefinition(name: string): Definition;
+}
+
+function getOrCreateReaderFromDefinition(
+  definitionName: string,
+  definitionMap: DefinitionMap,
+  readerMap: any
+): ReaderState {
+
+    // is it a basic type ?
+    if (partials.hasOwnProperty(definitionName)) {
+        return new ReaderState(partials[definitionName]);
+    }
+
+    let reader: ReaderState = readerMap[definitionName]!;
+
+    if (reader) {
+        return reader;
+    }
+    const definition = definitionMap.findDefinition(definitionName);
+
+    reader = new ReaderState({
+        parser: {}
+    });
+
+    for (const field  of definition.fields) {
+
+        const fieldReader = getOrCreateReaderFromDefinition(field.dataType, definitionMap, readerMap);
+        if (!fieldReader) {
+            throw new Error(" Cannot find reader for dataType " + field.dataType);
+        }
+
+        if (field.valueRank === undefined || field.valueRank === -1) {
+            reader.parser![field.name] = fieldReader;
+        } else if (field.valueRank === 1) {
+
+            const listReader: ReaderState = new ReaderState({
+                init(this: any) {
+                    this.listData = [];
+                },
+                parser: {
+                },
+                finish(this: any) {
+                    this.parent.value = this.listData;
+                },
+                endElement(this: any/*element*/) {
+                    const item = this.parser[field.dataType].data;
+                    this.listData.push(this.parser);
+                }
+            });
+
+            listReader.parser![field.dataType] = fieldReader;
+            reader.parser![field.name] = listReader;
+        } else {
+            throw new Error("Unsupported ValueRank !");
+        }
+    }
+
+    // xx const parser: ParserLike = {};
+    // xx parser[definition.name] = reader;
+    readerMap[definitionName] = reader;
+    return reader;
+}
+
+describe("Definition and ExtensionObject", () => {
+
+    it("should parse a definition node and convert it to a parser", async () => {
+
+        const s = `
+<Definition Name="1:MyOtherStructureDataType">
+    <Field DataType="String" ValueRank="1" Name="ListOfNames"/>
+    <Field DataType="MyStructureDataType" ValueRank="1" Name="ListOfValues"/>
+</Definition>`;
+
+        const MyOtherStructureDataTypeDef = {
+            name: "MyOtherStructureDataType",
+
+            fields: [
+                { name: "ListOfNames", valueRank: 1, dataType: "String" },
+                { name: "ListOfValues", valueRank: 1, dataType: "MyStructureDataType" }
+
+            ]
+        };
+        const s2 = `
+<Definition Name="1:MyStructureDataType">
+    <Field DataType="Int32" Name="Id"/>
+    <Field DataType="Double" Name="HighValue"/>
+    <Field DataType="Double" Name="LowValue"/>
+    <Field DataType="LocalizedText" Name="Comments"/>
+    <Field DataType="EUInformation" Name="EngineeringUnits"/>
+</Definition>`;
+
+        const MyStructureDataTypeDef: Definition = {
+            name: "MyStructureDataType",
+
+            fields: [
+                { name: "Id", valueRank: -1, dataType: "Int32" },
+                { name: "HighValue", valueRank: -1, dataType: "Double" },
+                { name: "LowValue", valueRank: -1, dataType: "Double" },
+                { name: "Comments", valueRank: -1, dataType: "LocalizedText" },
+                { name: "EngineeringUnits", valueRank: -1, dataType: "EUInformation" }
+            ]
+        };
+
+        const EUInformationDef: Definition = {
+            name: "EUInformation",
+
+            fields: [
+                { name: "NamespaceUri", dataType: "String" },
+                { name: "UnitId", dataType: "UInt32" },
+                { name: "DisplayName", dataType: "String" },
+                { name: "Description", dataType: "String" }
+            ]
+        };
+
+        const definitionMap = {
+            findDefinition(name: string): Definition {
+                switch (name) {
+                    case "MyStructureDataType":
+                        return MyStructureDataTypeDef;
+                    case "MyOtherStructureDataType":
+                        return MyOtherStructureDataTypeDef;
+                    case "EUInformation":
+                        return EUInformationDef;
+                    default:
+                        throw new Error("not found: " + name);
+                }
+            }
+        };
+
+        const reader = getOrCreateReaderFromDefinition(
+          "MyOtherStructureDataType",
+          definitionMap, {});
+
+        const parser = new Xml2Json(reader);
+
+        const userDefinedExtensionObject = `
+<MyOtherStructureDataType xmlns="http://yourorganisation.org/my_data_type/Types.xsd">
+<ListOfNames>
+    <String xmlns="http://opcfoundation.org/UA/2008/02/Types.xsd"></String>
+</ListOfNames>
+<ListOfValues>
+    <MyStructureDataType xmlns="http://yourorganisation.org/my_data_type/Types.xsd">
+        <Id>1</Id>
+        <HighValue>10</HighValue>
+        <LowValue>-10</LowValue>
+        <Comments>Comment1</Comments>
+        <EngineeringUnits>
+            <NamespaceUri xmlns="http://opcfoundation.org/UA/2008/02/Types.xsd"></NamespaceUri>
+            <UnitId xmlns="http://opcfoundation.org/UA/2008/02/Types.xsd">0</UnitId>
+            <DisplayName xmlns="http://opcfoundation.org/UA/2008/02/Types.xsd"/>
+            <Description xmlns="http://opcfoundation.org/UA/2008/02/Types.xsd"/>
+        </EngineeringUnits>
+    </MyStructureDataType>
+
+    <MyStructureDataType xmlns="http://yourorganisation.org/my_data_type/Types.xsd">
+        <Id>2</Id>
+        <HighValue>20</HighValue>
+        <LowValue>-20</LowValue>
+        <Comments>Comment2</Comments>
+        <EngineeringUnits>
+            <NamespaceUri xmlns="http://opcfoundation.org/UA/2008/02/Types.xsd"></NamespaceUri>
+            <UnitId xmlns="http://opcfoundation.org/UA/2008/02/Types.xsd">0</UnitId>
+            <DisplayName xmlns="http://opcfoundation.org/UA/2008/02/Types.xsd"/>
+            <Description xmlns="http://opcfoundation.org/UA/2008/02/Types.xsd"/>
+        </EngineeringUnits>
+    </MyStructureDataType>
+</ListOfValues>
+</MyOtherStructureDataType>
+        `;
+
+        const a = await parser.parseString(userDefinedExtensionObject);
+
+        console.log("return value =", a);
+
     });
 });

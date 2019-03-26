@@ -161,7 +161,9 @@ export class ReaderState implements IReaderState {
             /* istanbul ignore next*/
             if (invalid_fields.length !== 0) {
                 // tslint:disable:no-console
-                throw new Error("Invalid filed detected in ReaderState Parser !:" + invalid_fields.join(" - "));
+                throw new Error("Invalid filed detected in ReaderState Parser ! : " +
+                  invalid_fields.join(" - ") +
+                  " t =" + options.constructor.name);
             }
             this._init = options.init;
             this._finish = options.finish;

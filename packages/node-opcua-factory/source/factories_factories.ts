@@ -37,7 +37,11 @@ export function hasStructuredType(typeName: string): boolean {
      return !!_globalStructuredTypeConstructors[typeName];
 }
 export function getStructuredTypeSchema(typeName: string): StructuredTypeSchema {
-     return _globalStructuredTypeConstructors[typeName].schema;
+     const struct =  _globalStructuredTypeConstructors[typeName];
+     if (!struct) {
+         throw new Error("cannot find structured type for " + typeName);
+     }
+     return struct.schema;
 }
 
 export function registerFactory(typeName: string, constructor: ConstructorFuncWithSchema): void {

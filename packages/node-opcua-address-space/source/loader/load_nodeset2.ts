@@ -71,7 +71,9 @@ async function ensureDatatypeExtracted(addressSpace: any): Promise<ExtraDataType
 function findDataTypeNode(addressSpace: AddressSpace, encodingNodeId: NodeId): UADataType {
 
     const encodingNode = addressSpace.findNode(encodingNodeId)!;
-
+    if (!encodingNode) {
+        throw new Error("findDataTypeNode:  Cannot find " + encodingNodeId.toString());
+    }
     // xx console.log("encodingNode", encodingNode.toString());
 
     const refs = encodingNode.findReferences("HasEncoding", false);
@@ -716,13 +718,10 @@ export function generateAddressSpace(
                         assert(self.extensionObject instanceof ExtensionObject);
                         break;
                     default: {
-                        // to do: implement a post action to create and bind extension object
-                        console.log("loadnodeset2: unsupported typeDefinitionId in ExtensionObject " + self.typeDefinitionId.toString());
-                        const typeDefinitionId = self.typeDefinitionId; // the "Default Binary" nodeId
+                        debugLog("loadnodeset2: unsupported typeDefinitionId in ExtensionObject Default XML = " + self.typeDefinitionId.toString());
+                        const typeDefinitionId = _translateNodeId(self.typeDefinitionId.toString()); // the "Default Binary" nodeId
                         const pojo = self.extensionObjectPojo;
-
                         const task = async (addressSpace2: AddressSpace) => {
-                            console.log("Post treatment ", typeDefinitionId.toString());
 
                             await ensureDatatypeExtracted(addressSpace);
 
@@ -734,11 +733,10 @@ export function generateAddressSpace(
 
                             // at this time the bsd file containing object definition
                             // must have been found and object can be constructed
-                            console.log("before constructExtensionObject");
-                            const op = addressSpace2.constructExtensionObject(dataTypeNode, pojo);
-                            console.log("after constructExtensionObject");
+                            const userDefinedExtensionObject = addressSpace2.constructExtensionObject(dataTypeNode, pojo);
 
-                            console.log("xxxx POJO", op.toString());
+                            console.log("xxxx userDefinedExtensionObject", userDefinedExtensionObject.toString());
+                            // to do : store this object in the right place
 
                         };
                         postTasks.push(task);
@@ -746,7 +744,6 @@ export function generateAddressSpace(
                         assert(!self.extensionObject || self.extensionObject instanceof ExtensionObject);
                         break;
                     }
-
                 }
             }
         }
@@ -754,7 +751,7 @@ export function generateAddressSpace(
     const extensionObject_parser = {
         ExtensionObject: {
             init(this: any) {
-                this.typeDefinitionId = {};
+                this.typeDefinitionId = "";
                 this.extensionObject = null;
             },
             parser: _extensionObject_inner_parser,
@@ -886,7 +883,7 @@ export function generateAddressSpace(
                         // assert(element === "ExtensionObject");
                         if (!(this.parser.ExtensionObject.extensionObject instanceof ExtensionObject)) {
 
-                            throw new Error("expecting  an extension object");
+                            throw new Error("expecting an extension object");
                         }
                     } else if (this.parser.ExtensionObject.extensionObjectFuture) {
                         // assert(element === "ExtensionObject");
